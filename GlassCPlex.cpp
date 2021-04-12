@@ -925,6 +925,16 @@ void Glass::CalculoMaximoPilasNivelesEasy()
 	}
 	std::sort(Alturas.begin(), Alturas.end());
 	std::sort(Anchuras.begin(), Anchuras.end());
+	//Acumulado
+	for (int i = 0; i < batch_items; i++)
+	{
+		int suma = 0;
+		for (int i2 = 0; i2 <= i; i2++)
+		{
+			suma += Alturas[i2];
+		}
+		G_Acumulado_Min.push_back(suma);
+	}
 	//Cota trivial
 	int sumah = 0;
 	int sumaw = 0;
@@ -1241,6 +1251,8 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 	numtiras = P_maxnivelesw;
 	int numpieces = batch_items;
 	numbins = nbins;
+//	if (P_initial_solution)
+//		numbins = numbins * 2;
 	P_pilas = true;
 	int Tipo_objetivo = 2;
 	if (Tipo_objetivo == 3)
@@ -1599,6 +1611,45 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 		}
 
 	}
+	//Variable resto
+	IloIntVar Rm(env, 0, plate_w);
+	Rm.setName("Rm");
+	if (P_NewObjective_Rm)
+	{
+
+		//orders bins
+		for (int l = 0; l < numbins - 1; l++)
+		{
+			IloExpr v1(env);
+			v1 += y_l[l];
+			v1 += (-1) * y_l[l + 1];
+			restr.add(IloRange(env, 0, v1, IloInfinity));
+			v1.end();
+		}
+		//Variables relacionadas con la Rm
+		for (int l = 0; l < numbins; l++)
+		{
+			IloExpr v1(env);
+			v1 += (-1) * Rm;
+			if (l < (numbins - 1))
+				v1 += (-1) * plate_w * y_l[l + 1];
+			for (int k = 0; k < numtiras; k++)
+			{
+				v1 += w_kl[l][k];
+			}
+			restr.add(IloRange(env, -IloInfinity, v1, 0));
+			v1.end();
+		}
+		IloExpr v3(env);
+		for (int i = 0; i < numbins; i++)
+		{
+			v3 += plate_w * y_l[i];
+		}
+		v3 += (-1) * plate_w;
+		v3 += Rm;
+		restr.add(IloRange(env, floor(Total_area / plate_h), v3, IloInfinity));
+		v3.end();
+	}
 /*
 	if (P_orders)
 	{
@@ -1688,9 +1739,25 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 	if (Tipo_objetivo == 2)//por tira del último bin
 	{
 
-		for (int k = 0; k < numtiras; k++)
+		if (Tipo_objetivo == 2)//por tira del último bin
 		{
-			Expression_fobj += w_kl[numbins - 1][k];
+			if (P_NewObjective_Rm)
+			{
+				for (int i = 0; i < numbins; i++)
+				{
+					Expression_fobj += plate_w * y_l[i];
+				}
+				Expression_fobj += (-1) * plate_w;
+				Expression_fobj += Rm;
+
+			}
+			else
+			{
+				for (int k = 0; k < numtiras; k++)
+				{
+					Expression_fobj += w_kl[k][numbins - 1];
+				}
+			}
 		}
 	}
 	if (Tipo_objetivo == 3)//máximo de tiras
@@ -1754,7 +1821,10 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 			cplex.exportModel("RoadefStageOrig.lp");
 
 			//CPXsetintparam(env,CPX_PARAM_THREADS,1);
-
+		if (P_NewObjective_Rm)
+			cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, floor(Total_area / plate_h));
+		if (!P_initial_solution)
+			cplex.setParam(IloCplex::MIPEmphasis, 1);
 			//numero de filas y columnas del modelo
 		int nr = cplex.getNrows();
 		int nc = cplex.getNcols();
@@ -1980,6 +2050,7 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 //				if (cplex.getStatus() == IloAlgorithm::Unbounded) fprintf(f, "Unbounded\n");
 //				fprintf(f, "\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
 			}
+			LB_Best_Value_Formulation = cplex.getBestObjValue();
 //			fclose(f);
 		}
 		else
@@ -2074,8 +2145,8 @@ void Glass::FormulationStagesOrig(short int nbins, short int nt)
 					if (G_Draw_Exacto)
 					{
 						std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + "_" + std::to_string(Duplicated) +".txt";
-
-						fin3 = fopen(str.c_str(), "w+");
+						fin3=fopen(P_file_to_write.c_str(), "w+");
+//						fin3 = fopen(str.c_str(), "w+");
 					}
 					else
 						fin3 = fopen("./temp2.txt", "w+");
@@ -4364,8 +4435,8 @@ void Glass::FormulationStagesMinimoCorte(short int nbins, short int nt, bool Laz
 					if (G_Draw_Exacto)
 					{
 						std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + ".txt";
-
-						fin3 = fopen(str.c_str(), "w+");
+						fin3=fopen(P_file_to_write.c_str(), "w+");
+//						fin3 = fopen(str.c_str(), "w+");
 					}
 					else
 						fin3 = fopen("./temp2.txt", "w+");
@@ -6165,8 +6236,8 @@ void Glass::FormulationStagesIIMinimoCorte(short int nbins, short int nt, bool L
 				if (G_Draw_Exacto)
 				{
 					std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + ".txt";
-
-					fin3 = fopen(str.c_str(), "w+");
+					fin3=fopen(P_file_to_write.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");
@@ -7748,8 +7819,8 @@ void Glass::FormulationStagesIIIMinimoCorteTiras(short int nbins, short int nt, 
 				if (G_Draw_Exacto)
 				{
 					std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + ".txt";
-
-					fin3 = fopen(str.c_str(), "w+");
+					fin3=fopen(P_file_to_write.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");
@@ -10147,8 +10218,8 @@ void Glass::FormulationCompleta4Indices(short int nbins, short int nt, bool Lazy
 				if (G_Draw_Exacto)
 				{
 					std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + ".txt";
-
-					fin3 = fopen(str.c_str(), "w+");
+					fin3=fopen(P_file_to_write.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");				int ndefects = 0;
@@ -10396,7 +10467,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 		P_maxnivelesm -= 4;
 		P_maxnivelesh -= 4;
 	}
-	P_maxnivelesh++;
+//	P_maxnivelesh++;
 	//Compute the number of pieces
 	//P_Set_ar y P_Set_xar
 	int trozo = plate_w;
@@ -10426,6 +10497,8 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 		
 	}
+//	if (!P_initial_solution)
+//		numbins++;
 	if (P_trimming && Type!=2)
 		ComputePiecesEquals();
 	int kk = 9;
@@ -10458,8 +10531,8 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 //	int numpiezasmax = 3;
 	int numpieces = batch_items;
 	numbins = nbins;
-
-
+//	if (!P_initial_solution)
+//		numbins =numbins*2;
 //	numtiras = 5;
 //	numpilas = 4;
 //	numpiezasmax = 3;
@@ -10485,7 +10558,6 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 	printf("Aqui21");
 
-
 	//Variables defectos
 	BoolVarMatrix5 zr_dmjkl(env, max_nd);
 	BoolVarMatrix5 zrp_dmjkl(env, max_nd);
@@ -10504,7 +10576,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 	BoolVarMatrix3 ml_jkl(env, numpilas);
 	BoolVarMatrix2 ms_kl(env, numtiras);
 
-		NumVarMatrix5 x_imjkl(env, numpieces);
+		BoolVarMatrix5 x_imjkl(env, numpieces);
 	BoolVarMatrix5 xr_imjkl(env, numpieces);
 
 	//Variables para el trimming
@@ -10530,7 +10602,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 	IloNumVarArray vars(env);
 	IloNumArray vals(env);
-
+	int generals = 0;
 
 	//	int LastBinWidth = floor((Total_area - ((Boolbins - 1)*plate_h*plate_w)) / plate_h);
 	//	LastBinWidth = 0;
@@ -10549,7 +10621,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 			maxh = items[i].Getitem_h();
 		if (items[i].Getitem_w() > maxh)
 			maxh = items[i].Getitem_w();
-		x_imjkl[i] = NumVarMatrix4(env, numpiezasmax);
+		x_imjkl[i] = BoolVarMatrix4(env, numpiezasmax);
 		if (P_set_xa[i])
 		{
 			xa_imjkl[i] = BoolVarMatrix4(env, numpiezasmax);
@@ -10560,21 +10632,21 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 		zar_imjkl[i] = BoolVarMatrix4(env, numpiezasmax);
 		for (int m = 0; m < numpiezasmax; m++)
 		{
-			x_imjkl[i][m] = NumVarMatrix3(env, numpilas);
+			x_imjkl[i][m] = BoolVarMatrix3(env, numpilas);
 			if (variable_a)
 				xa_imjkl[i][m] = BoolVarMatrix3(env, numpilas);
 			za_imjkl[i][m] = BoolVarMatrix3(env, numpilas);
 			zar_imjkl[i][m] = BoolVarMatrix3(env, numpilas);
 			for (int j = 0; j < numpilas; j++)
 			{
-				x_imjkl[i][m][j] = NumVarMatrix(env, numtiras);
+				x_imjkl[i][m][j] = BoolVarMatrix(env, numtiras);
 				if (variable_a)
 					xa_imjkl[i][m][j] = BoolVarMatrix(env, numtiras);
 				za_imjkl[i][m][j] = BoolVarMatrix(env, numtiras);
 				zar_imjkl[i][m][j] = BoolVarMatrix(env, numtiras);
 				for (int k = 0; k < numtiras; k++)
 				{
-					x_imjkl[i][m][j][k] = IloIntVarArray(env, numbins);
+					x_imjkl[i][m][j][k] = IloBoolVarArray(env, numbins);
 					if (variable_a)
 						xa_imjkl[i][m][j][k] = IloBoolVarArray(env, numbins);
 					za_imjkl[i][m][j][k] = IloBoolVarArray(env, numbins);
@@ -10583,9 +10655,26 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 					{
 						int max_pieces = 1;
 							 
-						x_imjkl[i][m][j][k][l] = IloIntVar(env, 0, max_pieces);
+						x_imjkl[i][m][j][k][l] = IloBoolVar(env);
 						sprintf(nombre, "x_%d_%d_%d_%d_%d", i, m, j, k, l);
 						x_imjkl[i][m][j][k][l].setName(nombre);
+						int maximo_tira = max1Cut;
+						if (k > 0)
+							maximo_tira = min(max1Cut, max(0, plate_w - G_Acumulado_Min[k - 1]));
+						int maximo_seccion = maximo_tira;
+						if (m > 0)
+							maximo_seccion = min(maximo_tira, max(0, maximo_tira - G_Acumulado_Min[m - 1]));
+						int maximo_h = plate_h;
+						if (j > 0)
+							maximo_h = min(plate_h, max(0, plate_h - G_Acumulado_Min[j - 1]));
+
+/*						if (items[i].Getitem_w() > maximo_seccion || items[i].Getitem_h() > maximo_h)
+						{
+							IloExpr v1(env);
+							v1 += x_imjkl[i][m][j][k][l];
+							restr.add(IloRange(env, 0, v1, 0));
+							v1.end();
+						}*/
 						if (variable_a)
 						{
 							xa_imjkl[i][m][j][k][l] = IloBoolVar(env);
@@ -10639,20 +10728,32 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 						sprintf(nombre, "xr_%d_%d_%d_%d_%d", i, m, j, k, l);
 						xr_imjkl[i][m][j][k][l].setName(nombre);
-						//IloExpr v1(env);
-						//v1 += xr_imjkl[i][m][j][k][l];
-						//restr.add(IloRange(env, 0, v1, 0));
-						//v1.end();
+						int maximo_tira = max1Cut;
+						if (k > 0)
+							maximo_tira = min(max1Cut, max(0, plate_w - G_Acumulado_Min[k - 1]));
+						int maximo_seccion = maximo_tira;
+						if (m > 0)
+							maximo_seccion = min(maximo_tira,max(0, maximo_tira - G_Acumulado_Min[m - 1]));
+						int maximo_h = plate_h;
+						if (j > 0)
+							maximo_h = min(plate_h, max(0, plate_h - G_Acumulado_Min[j - 1]));
+
+/*						if (items[i].Getitem_h() > maximo_seccion || items[i].Getitem_w() > maximo_h)
+						{
+							IloExpr v1(env);
+							v1 += xr_imjkl[i][m][j][k][l];
+							restr.add(IloRange(env, 0, v1, 0));
+							v1.end();
+						}*/
 						if (variable_ar)
 						{
 							xar_imjkl[i][m][j][k][l] = IloBoolVar(env);
-
 							sprintf(nombre, "xar_%d_%d_%d_%d_%d", i, m, j, k, l);
 							xar_imjkl[i][m][j][k][l].setName(nombre);
-							//IloExpr v1(env);
-							//v1 += xar_imjkl[i][m][j][k][l];
-							//restr.add(IloRange(env, 0, v1, 0));
-							//v1.end();
+								//IloExpr v1(env);
+								//v1 += xar_imjkl[i][m][j][k][l];
+								//restr.add(IloRange(env, 0, v1, 0));
+								//v1.end();
 						}
 
 					}
@@ -10674,12 +10775,35 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 			zu_mjkl[m][j] = BoolVarMatrix(env, numtiras);
 			for (int k = 0; k < numtiras; k++)
 			{
+				int maximo_tira = max1Cut;
+
+				if (k > 0)
+					maximo_tira = min(max1Cut, max(0, plate_w - G_Acumulado_Min[k - 1]));
+
 				w_mjkl[m][j][k] = IloIntVarArray(env, numbins);
 				es_mjkl[m][j][k] = IloBoolVarArray(env, numbins);
 				zu_mjkl[m][j][k] = IloBoolVarArray(env, numbins);
 				for (int l = 0; l < numbins; l++)
 				{
-					w_mjkl[m][j][k][l] = IloIntVar(env, 0, max1Cut);
+					if (P_initial_solution && l == (numbins-1))
+					{
+						maximo_tira = Best_Width;
+
+						if (k > 0)
+							maximo_tira = min(max1Cut, max(0, maximo_tira - G_Acumulado_Min[k - 1]));
+
+					}
+					int maximo_seccion = maximo_tira;
+					if (m > 0)
+						maximo_seccion =min(maximo_tira, max(0, maximo_tira - G_Acumulado_Min[m - 1]));
+
+					if (maximo_seccion < G_Acumulado_Min[0])
+						maximo_seccion = 0;
+					if (maximo_seccion > 0)
+						generals++;
+					else
+						int kk = 9;
+					w_mjkl[m][j][k][l] = IloIntVar(env, 0, maximo_seccion);
 					sprintf(nombre, "w_%d_%d_%d_%d", m, j, k, l);
 					w_mjkl[m][j][k][l].setName(nombre);
 					es_mjkl[m][j][k][l] = IloBoolVar(env);
@@ -10703,7 +10827,15 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 			h_jkl[i][j] = IloIntVarArray(env, numbins);
 			for (int l = 0; l < numbins; l++)
 			{
-				h_jkl[i][j][l] = IloIntVar(env, 0, plate_h);
+				int maximo = plate_h;
+				if (i > 0)
+					maximo = min(plate_h, max(0, plate_h - G_Acumulado_Min[i - 1]));
+
+				if (maximo < G_Acumulado_Min[0])
+					maximo = 0;
+				if (maximo > 0)
+					generals++;
+				h_jkl[i][j][l] = IloIntVar(env, 0, maximo);
 				sprintf(nombre, "h_%d_%d_%d", i, j, l);
 				h_jkl[i][j][l].setName(nombre);
 
@@ -10721,7 +10853,22 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 		for (int j = 0; j < numbins; j++)
 		{
-			w_kl[i][j] = IloIntVar(env, 0, max1Cut);
+			int maximo = max1Cut;
+			if (i>0)
+			maximo =min(max1Cut, max(0, plate_w - G_Acumulado_Min[i - 1]));
+			if (P_initial_solution && j == (numbins-1))
+			{
+				maximo = Best_Width;
+
+				if (i > 0)
+					maximo = min(max1Cut, max(0, maximo - G_Acumulado_Min[i - 1]));
+
+			}
+			if (maximo < G_Acumulado_Min[0])
+				maximo = 0;
+			if (maximo > 0)
+				generals++;
+			w_kl[i][j] = IloIntVar(env, 0, maximo);
 			sprintf(nombre, "W_%d_%d", i, j);
 			w_kl[i][j].setName(nombre);
 			y_kl[i][j] = IloBoolVar(env);
@@ -10824,6 +10971,13 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 					zr_dkl[i][j][kl] = IloBoolVar(env);
 					sprintf(nombre, "zr_%d_%d_%d", i, j, kl);
 					zr_dkl[i][j][kl].setName(nombre);
+/*					if ((kl!=numbins-1) && (kl==l) && ((*itD).Getpos_x() + (*itD).Getwidth()) < G_Acumulado_Min[j ])
+					{
+						IloExpr v1(env);
+						v1+=zr_dkl[i][j][kl];
+						restr.add(IloRange(env, 0, v1, 0));
+						v1.end();
+					}*/
 				}
 			}
 		}
@@ -11445,8 +11599,46 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 		restr.add(IloRange(env, 0, v3, IloInfinity));
 		v3.end();
 	}
+	//Variable resto
+	IloIntVar Rm(env, 0, plate_w);
+	Rm.setName("Rm");
+	if (P_NewObjective_Rm)
+	{
 
+		//orders bins
+		for (int l = 0; l < numbins - 1; l++)
+		{
+			IloExpr v1(env);
+			v1 += y_l[l];
+			v1 += (-1) * y_l[l + 1];
+			restr.add(IloRange(env, 0, v1, IloInfinity));
+			v1.end();
+		}
+		//Variables relacionadas con la Rm
+		for (int l = 0; l < numbins ; l++)
+		{
+			IloExpr v1(env);
+			v1 +=(-1)* Rm;
+			if (l<(numbins-1))
+			v1 += (-1) * plate_w * y_l[l + 1];
+			for (int k = 0; k < numtiras; k++)
+			{
+				v1 += w_kl[k][l];
+			}
+			restr.add(IloRange(env, -IloInfinity, v1,0 ));
+			v1.end();
+		}
+		IloExpr v3(env);
+		for (int i = 0; i < numbins; i++)
+		{
+			v3 += plate_w * y_l[i];
+		}
+		v3 += (-1) * plate_w;
+		v3 += Rm;
+		restr.add(IloRange(env, floor(Total_area / plate_h), v3, IloInfinity));
+		v3.end();
 
+	}
 	//CONSTRAINT ORDER STACKS
 	//Orden de los stacks por parejas
 	//******************
@@ -12101,6 +12293,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 			v4.end();
 		}
 	}
+
 	model.add(restr);
 	//AÑADIMOS LAS RESTRICCIONES AL MODELO 
 //	model.add(restr);
@@ -12144,10 +12337,22 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 	}
 	if (Tipo_objetivo == 2)//por tira del último bin
 	{
-
-		for (int k = 0; k < numtiras; k++)
+		if (P_NewObjective_Rm)
 		{
-			Expression_fobj += w_kl[k][numbins - 1];
+			for (int i = 0; i < numbins; i++)
+			{
+				Expression_fobj +=plate_w* y_l[i];
+			}
+			Expression_fobj +=(-1)* plate_w;
+			Expression_fobj += Rm;
+
+		}
+		else
+		{
+			for (int k = 0; k < numtiras; k++)
+			{
+				Expression_fobj += w_kl[k][numbins - 1];
+			}
 		}
 	}
 	if (Tipo_objetivo == 3)//por área de lo metido en el bin
@@ -12230,10 +12435,19 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 		/*cplex.setParam(IloCplex::NodeFileInd, 3);*/
 		//limite de tiempo
 		cplex.setParam(IloCplex::TiLim, max_time); //TIEMPO EN SEGUNDOS
-//		cplex.setParam(IloCplex::MIPEmphasis, 1);//
-//		cplex.setParam(IloCplex::Param::Preprocessing::Presolve, 0);
+
 //		if (Tipo_objetivo == 2)
 //			cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, LastBinWidth);
+		if (P_NewObjective_Rm)
+		cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, floor(Total_area / plate_h));
+		if (!P_initial_solution)
+		cplex.setParam(IloCplex::MIPEmphasis, 1);
+		
+		//
+//		cplex.setParam(IloCplex::Param::Preprocessing::Presolve, 0);
+//		cplex.setParam(IloCplex::LongParam::HeurFreq, -1);
+//		cplex.setParam(IloCplex::Param::MIP::Display, 4);
+//		cplex.setParam(IloCplex::Param::RootAlgorithm, 4);
 
 		if (G_Dibujar)
 		cplex.exportModel("Roadef.lp");
@@ -12390,6 +12604,7 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 				if (cplex.getStatus() == IloAlgorithm::Unbounded)
 					//					fprintf(f, "Unbounded\n");
 					printf("Unbounded\n");
+				LB_Best_Value_Formulation = cplex.getBestObjValue();
 
 				//				fprintf(f, "\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
 //				printf("\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
@@ -12670,8 +12885,8 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 				if (G_Draw_Exacto)
 				{
 					 std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + "_" + std::to_string(Duplicated) +".txt";
-
-					fin3 = fopen(str.c_str(), "w+");
+					 fin3=fopen(P_file_to_write.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");
@@ -12679,9 +12894,9 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 				int nbinsdefects = 0;
 				for (int i = 0; i < numbins; i++)
 				{
-					if (DefectsPlate[i].size() >= 1)
+					if (DefectsPlate[i+1].size() >= 1)
 						nbinsdefects++;
-					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i].begin(); it != DefectsPlate[i].end(); it++)
+					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i+1].begin(); it != DefectsPlate[i+1].end(); it++)
 					{
 						ndefects++;
 					}
@@ -12692,8 +12907,8 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 
 				for (int i = 0; i < numbins; i++)
 				{
-
-					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i].begin(); it != DefectsPlate[i].end(); it++)
+					fprintf(fin3, "%d\t%d\n", i+1, DefectsPlate[i+1].size());
+					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i+1].begin(); it != DefectsPlate[i+1].end(); it++)
 					{
 						// Get defect coordinates.
 						int defect_x = (*it).Getpos_x();
@@ -12701,15 +12916,10 @@ void Glass::FormulacionCompleta4IndicesDefectos(short int nbins, short int nt, b
 						int defect_width = (*it).Getwidth();
 						int defect_height = (*it).Getheight();
 
-						fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", defect_x, defect_y, defect_width, defect_height, i);
+						fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", defect_x, defect_y, defect_width, defect_height, i+1);
 					}
 				}
-				for (int i = 0; i < numbins; i++)
-				{
-					if (DefectsPlate[i].size() > 0)
-						fprintf(fin3, "%d\t%d\n", i, DefectsPlate[i].size());
 
-				}
 				for (int l = 0; l < numbins; l++)
 				{
 					Best_Solution_Exacto = 0;
@@ -15244,8 +15454,8 @@ void Glass::FormulacionCompleta4IndicesDefectosPilas(short int nbins, short int 
 				if (G_Draw_Exacto)
 				{
 					std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_"+ std::to_string(Tipo_objetivo) + ".txt";
-
-					fin3 = fopen(str.c_str(), "w+");
+					fin3=fopen(P_file_to_write.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");

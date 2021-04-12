@@ -43,8 +43,9 @@ int main(int argc, char **argv)
 	string file_to_read, file_to_write, batchPath, solutionPath, defectsPath, optParamsPath, file_idx2;
 	int Type = 0;
 	int TeamId = 0, seed = 1, Seconds = 0;
-	int Doble = 2;
+	int Doble = 0;
 	int Iter = 10;
+	bool Init_Sol = true;
 	//Procesamiento de los parametros
 
 	if ((argc > 2) && (argc % 2 == 1))
@@ -105,6 +106,11 @@ int main(int argc, char **argv)
 			{
 				sscanf(argv[2], "%d", &Doble);
 			}
+			else if (strcmp(argv[1], "-Initsol") == 0)
+			{
+
+				sscanf(argv[2], "%d", &Init_Sol);
+			}
 			else if (strcmp(argv[1], "-Type") == 0)
 			{
 				sscanf(argv[2], "%d", &Type);
@@ -141,7 +147,8 @@ int main(int argc, char **argv)
 	defectsPath = file_idx2 + "_defects.csv";
 	solutionPath = file_idx2 + "_solution.csv";
 	if (Type!=2)
-	optParamsPath = PATH_TO_INSTANCES "global_param.csv";
+		optParamsPath = PATH_TO_INSTANCES "global_param.csv";
+//	optParamsPath = PATH_TO_INSTANCES "global_param_toy.csv";
 	else
 		optParamsPath = PATH_TO_INSTANCES "global_paramGW.csv";
 
@@ -545,7 +552,7 @@ int main(int argc, char **argv)
 		Problema.P_cota = false;
 		Problema.G_Dibujar = false;
 		Problema.P_file_to_write = file_to_write;
-		Problema.P_initial_solution = true;
+		Problema.P_initial_solution = Init_Sol;
 		if (Problema.P_initial_solution)
 		{
 //			if (Rotate == false)
@@ -629,6 +636,7 @@ int main(int argc, char **argv)
 			//		Problema.G_type_strip = get_aleatorio(0, 3);
 			//		if (i>=0)
 			Problema.Duplicated = Doble;
+			Problema.Use_init_sol = Init_Sol;
 			Problema.G_Repeticiones = Iter;
 			//			Problema.G_Classic = true;
 			Problema.name_instance = file_to_read;
@@ -970,9 +978,10 @@ int main(int argc, char **argv)
 		Problemas[0].P_cota = false;
 		//		Problemas[0].G_Dibujar = false;
 		Problemas[0].P_file_to_write = file_to_write;
-		Problemas[0].P_initial_solution = true;
+		Problemas[0].P_initial_solution = Init_Sol;
 		Problemas[0].G_Dibujar = false;
 		Problemas[0].G_Draw_Exacto = true;
+		Problemas[0].P_NewObjective_Rm=true;
 		if (Exacto >= 3) Problemas[0].P_cota = true;
 		//		if (Exacto >= 3) Problemas[0].P_order_tiras = true;
 		if (Exacto >= 3) Problemas[0].P_minimo_waste = true;
@@ -1029,7 +1038,7 @@ int main(int argc, char **argv)
 						tmp_firstB = ((double)(((time_final_fin_exacto.time - time_final_ini_exacto.time) + (time_final_heur.time - time_ini.time)) * 1000 + ((time_final_fin_exacto.millitm - time_final_ini_exacto.millitm) + (time_final_heur.millitm - time_ini.millitm)))) / 1000;
 						FILE* file_e;
 
-						string file_Exacto = file_to_read + "_" + std::to_string(Exacto) + ".txt";
+						string file_Exacto = file_to_read + "_" + std::to_string(Exacto) +"_" + std::to_string(Doble)+"_" + std::to_string(Init_Sol)+  ".txt";
 
 						file_e = fopen(file_Exacto.c_str(), "w+");
 						fprintf(file_e, "%s   Best %d  Global Iter Best %d Max Iter %d MaxLevel %d Level Best Solution %d Iter %d Rotate %d Iterations %d Tipo Lista %d Tipo Strip %d Classic %d Finstant %d Iter %d Param %d Iterations %d SWidht %d Salpha %d SizeLista %d SizeChosen %d %d %d %d %d %d %d NB %d Seed %d Tira %d BinsH %d TiraH %d F %d LB %d Time %f MW %d MP %d MM %d E %d NS %d PJ %d PJP %d D %d BSE %d\n", file_idx2.c_str(), Global_Best_Objective_Function, Iter_Best, maxIter, maxLevel, Level_Best_Solution, Iter, Rotate, Iterations, Tipo_Lista, Type_Strip, Classic, FInstant, Iter, Param, Problemas[0].G_Iterations, Problemas[0].G_Size_Chosen, Problemas[0].G_Size_alpha, Problemas[0].Max_List_Nodos_Beam, Problemas[0].Max_List_Nodos_Beam_Global_Double + Problemas[0].Max_List_Nodos_Beam_Global_Global + Problemas[0].Max_List_Nodos_Beam_Global_Utilization, NB, Problemas[0].batch_items, Problemas[0].stack_nbr, Problemas[0].Total_defects, Problemas[0].Total_area_defects, Problemas[0].Total_area, NB, seed, CotaTira, Problemas[0].Best_plates_nbr, Tira, Problemas[0].Best_Value_Formulation, Problemas[0].LB_Best_Value_Formulation, tmp_firstB, Problemas[0].P_maxnivelesw, Problemas[0].P_maxnivelesh, Problemas[0].P_maxnivelesm, Exacto, Problemas[0].stack_nbr, Problemas[0].P_piezas_juntas, Problemas[0].P_piezas_juntas_posibilidades, 0, Problemas[0].Best_Solution_Exacto);
@@ -1070,7 +1079,7 @@ int main(int argc, char **argv)
 
 
 
-			for (int i = Exacto; i <= 10; i++)
+			for (int i = Exacto; i <= 8; i++)
 			{
 
 
@@ -1083,7 +1092,7 @@ int main(int argc, char **argv)
 					Problemas[0].P_heur = true;
 				}
 #ifdef _WIN32
-										Problemas[0].G_Dibujar = true;
+										Problemas[0].G_Dibujar = false;
 										Problemas[0].G_Draw_Exacto = true;
 #endif
 #ifdef __linux__ 
@@ -1126,10 +1135,10 @@ int main(int argc, char **argv)
 				else
 					Problemas[0].FormulacionCompleta4IndicesDefectosPilas(NB, nThreads, false, false);
 				ftime(&time_final_fin_exacto);
-
+//				Problemas[0].MakeFileTextSolution(file_to_write);
 				FILE* file8;
 				tmp_firstB = ((double)(((time_final_fin_exacto.time - time_final_ini_exacto.time) + (time_final_heur.time - time_ini.time)) * 1000 + ((time_final_fin_exacto.millitm - time_final_ini_exacto.millitm) + (time_final_heur.millitm - time_ini.millitm)))) / 1000;
-				string file_eight = file_to_read + "_" + std::to_string(Exacto) + ".txt";
+				string file_eight = file_to_read + "_" + std::to_string(Exacto) + "_" + std::to_string(Doble) + "_" + std::to_string(Init_Sol) + ".txt";
 				file8 = fopen(file_eight.c_str(), "w+");
 				fprintf(file8, "%s   Best %d  Global Iter Best %d Max Iter %d MaxLevel %d Level Best Solution %d Iter %d Rotate %d Iterations %d Tipo Lista %d Tipo Strip %d Classic %d Finstant %d Iter %d Param %d Iterations %d SWidht %d Salpha %d SizeLista %d SizeChosen %d %d %d %d %d %d %d NB %d Seed %d Tira %d BinsH %d TiraH %d F %d LB %d Time %f MW %d MP %d MM %d E %d NS %d PJ %d PJP %d D %d BSE %d\n", file_idx2.c_str(), Global_Best_Objective_Function, Iter_Best, maxIter, maxLevel, Level_Best_Solution, Iter, Rotate, Iterations, Tipo_Lista, Type_Strip, Classic, FInstant, Iter, Param, Problemas[0].G_Iterations, Problemas[0].G_Size_Chosen, Problemas[0].G_Size_alpha, Problemas[0].Max_List_Nodos_Beam, Problemas[0].Max_List_Nodos_Beam_Global_Double + Problemas[0].Max_List_Nodos_Beam_Global_Global + Problemas[0].Max_List_Nodos_Beam_Global_Utilization, NB, Problemas[0].batch_items, Problemas[0].stack_nbr, Problemas[0].Total_defects, Problemas[0].Total_area_defects, Problemas[0].Total_area, NB, seed, CotaTira, Problemas[0].Best_plates_nbr, Tira, Problemas[0].Best_Value_Formulation, Problemas[0].LB_Best_Value_Formulation, tmp_firstB, Problemas[0].P_maxnivelesw, Problemas[0].P_maxnivelesh, Problemas[0].P_maxnivelesm, Exacto, Problemas[0].stack_nbr, Problemas[0].P_piezas_juntas, Problemas[0].P_piezas_juntas_posibilidades, defects, Problemas[0].Best_Solution_Exacto);
 				fclose(file8);

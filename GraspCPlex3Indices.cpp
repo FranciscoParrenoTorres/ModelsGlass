@@ -152,6 +152,8 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 	//	LastBinWidth = 0;
 	int LastBinWidth = max((double)floor((Total_area - ((numbins - 1) * plate_h * plate_w)) / plate_h), (double)0);
 	int maxh = 0;
+	if (!P_initial_solution)
+		numbins = numbins * 2;
 
 	/**********************************************************/
 	/***************** INICIALIZO VARIABLES *******************/
@@ -274,7 +276,14 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 			h_jkl[i][j] = IloIntVarArray(env, numbins);
 			for (int l = 0; l < numbins; l++)
 			{
-				h_jkl[i][j][l] = IloIntVar(env, 0, plate_h);
+
+				int maximo = plate_h;
+				if (i > 0)
+					maximo = min(plate_h, max(0, plate_h - G_Acumulado_Min[i - 1]));
+
+				if (maximo < G_Acumulado_Min[0])
+					maximo = 0;
+				h_jkl[i][j][l] = IloIntVar(env, 0, maximo);
 				sprintf(nombre, "h_%d_%d_%d", i, j, l);
 				h_jkl[i][j][l].setName(nombre);
 
@@ -291,7 +300,21 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 		esH_kl[i] = IloBoolVarArray(env, numbins);
 		for (int j = 0; j < numbins; j++)
 		{
-			w_kl[i][j] = IloIntVar(env, 0, max1Cut);
+			int maximo = max1Cut;
+			if (i > 0)
+				maximo = min(max1Cut, max(0, plate_w - G_Acumulado_Min[i - 1]));
+			if (P_initial_solution && j == (numbins - 1))
+			{
+				maximo = Best_Width;
+
+				if (i > 0)
+					maximo = min(max1Cut, max(0, maximo - G_Acumulado_Min[i - 1]));
+
+			}
+			if (maximo < G_Acumulado_Min[0])
+				maximo = 0;
+
+			w_kl[i][j] = IloIntVar(env, 0, maximo);
 			sprintf(nombre, "W_%d_%d", i, j);
 			w_kl[i][j].setName(nombre);
 			y_kl[i][j] = IloBoolVar(env);
@@ -410,6 +433,47 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 			restr.add(IloRange(env, -IloInfinity, v1, 1));
 
 		v1.end();
+	}
+
+	//Variable resto
+	IloIntVar Rm(env, 0, plate_w);
+	Rm.setName("Rm");
+	if (P_NewObjective_Rm)
+	{
+
+		//orders bins
+		for (int l = 0; l < numbins - 1; l++)
+		{
+			IloExpr v1(env);
+			v1 += y_l[l];
+			v1 += (-1) * y_l[l + 1];
+			restr.add(IloRange(env, 0, v1, IloInfinity));
+			v1.end();
+		}
+		//Variables relacionadas con la Rm
+		for (int l = 0; l < numbins; l++)
+		{
+			IloExpr v1(env);
+			v1 += (-1) * Rm;
+			if (l < (numbins - 1))
+				v1 += (-1) * plate_w * y_l[l + 1];
+			for (int k = 0; k < numtiras; k++)
+			{
+				v1 += w_kl[k][l];
+			}
+			restr.add(IloRange(env, -IloInfinity, v1, 0));
+			v1.end();
+		}
+		IloExpr v3(env);
+		for (int i = 0; i < numbins; i++)
+		{
+			v3 += plate_w * y_l[i];
+		}
+		v3 += (-1) * plate_w;
+		v3 += Rm;
+		restr.add(IloRange(env, floor(Total_area/plate_h), v3, IloInfinity));
+		v3.end();
+
 	}
 	//Restricciones para el ORDEN de los triming
 	//CONSTRAINTS ORDERS TRIMiNG
@@ -1114,9 +1178,25 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 	if (Tipo_objetivo == 2)//por tira del último bin
 	{
 
-		for (int k = 0; k < numtiras; k++)
+		if (Tipo_objetivo == 2)//por tira del último bin
 		{
-			Expression_fobj += w_kl[k][numbins - 1];
+			if (P_NewObjective_Rm)
+			{
+				for (int i = 0; i < numbins; i++)
+				{
+					Expression_fobj += plate_w * y_l[i];
+				}
+				Expression_fobj += (-1) * plate_w;
+				Expression_fobj += Rm;
+
+			}
+			else
+			{
+				for (int k = 0; k < numtiras; k++)
+				{
+					Expression_fobj += w_kl[k][numbins - 1];
+				}
+			}
 		}
 	}
 	if (Tipo_objetivo == 3)//por área de lo metido en el bin
@@ -1177,7 +1257,8 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 //		cplex.exportModel("Roadef.lp");
 		if (G_Dibujar)
 			cplex.exportModel("Roadef.lp");
-
+		if (P_NewObjective_Rm)
+			cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, floor(Total_area / plate_h));
 			//CPXsetintparam(env,CPX_PARAM_THREADS,1);
 
 			//numero de filas y columnas del modelo
@@ -1318,6 +1399,7 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 				//				fprintf(f, "\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
 				printf("\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
 			}
+			LB_Best_Value_Formulation = cplex.getBestObjValue();
 			//			fclose(f);
 		}
 		else
@@ -1512,13 +1594,14 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 				if (G_Draw_Exacto)
 				{
 					std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + "_" + std::to_string(Duplicated) +".txt";
-					fin3 = fopen(str.c_str(), "w+");
+//					fin3 = fopen(str.c_str(), "w+");
+					fin3=fopen(P_file_to_write.c_str(), "w+");
 				}
 				else
 					fin3 = fopen("./temp2.txt", "w+");
 				int ndefects = 0;
 				int nbinsdefects = 0;
-				for (int i = 0; i < numbins; i++)
+				for (int i = 0; i <= numbins; i++)
 				{
 					if (DefectsPlate[i].size() >= 1)
 						nbinsdefects++;
@@ -1530,11 +1613,23 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 				//					fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", plate_w, plate_h, numbins, Best_Objective_function);
 				fprintf(fin3, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", plate_w, plate_h, numbins, numpieces, ndefects, nbinsdefects, LB_Best_Value_Formulation, Best_Value_Formulation);
 				//defectos
+				for (int i = 0; i < numbins; i++)
+				{
+					if (DefectsPlate[i+1].size() >= 1)
+						nbinsdefects++;
+					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i+1].begin(); it != DefectsPlate[i+1].end(); it++)
+					{
+						ndefects++;
+					}
+				}
+				//					fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", plate_w, plate_h, numbins, Best_Objective_function);
+				fprintf(fin3, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", plate_w, plate_h, numbins, numpieces, ndefects, nbinsdefects, LB_Best_Value_Formulation, Best_Value_Formulation);
+				//defectos
 
 				for (int i = 0; i < numbins; i++)
 				{
-
-					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i].begin(); it != DefectsPlate[i].end(); it++)
+					fprintf(fin3, "%d\t%d\n", i+1, DefectsPlate[i+1].size());
+					for (std::list< GlassDefect > ::iterator it = DefectsPlate[i+1].begin(); it != DefectsPlate[i+1].end(); it++)
 					{
 						// Get defect coordinates.
 						int defect_x = (*it).Getpos_x();
@@ -1542,14 +1637,8 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 						int defect_width = (*it).Getwidth();
 						int defect_height = (*it).Getheight();
 
-						fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", defect_x, defect_y, defect_width, defect_height, i);
+						fprintf(fin3, "%d\t%d\t%d\t%d\t%d\n", defect_x, defect_y, defect_width, defect_height, i+1);
 					}
-				}
-				for (int i = 0; i < numbins; i++)
-				{
-					if (DefectsPlate[i].size() > 0)
-						fprintf(fin3, "%d\t%d\n", i, DefectsPlate[i].size());
-
 				}
 
 
@@ -1819,6 +1908,7 @@ void Glass::FormulacionCompleta3Indices(short int nbins, short int nt, bool Lazy
 
 
 				fclose(fin3);
+
 				DibujarOpenGL();
 			}
 
@@ -2410,7 +2500,45 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 		restr.add(IloRange(env, 0, v3, IloInfinity));
 		v3.end();
 	}
+	//Variable resto
+	IloIntVar Rm(env, 0, plate_w);
+	Rm.setName("Rm");
+	if (P_NewObjective_Rm)
+	{
 
+		//orders bins
+		for (int l = 0; l < numbins - 1; l++)
+		{
+			IloExpr v1(env);
+			v1 += y_l[l];
+			v1 += (-1) * y_l[l + 1];
+			restr.add(IloRange(env, 0, v1, IloInfinity));
+			v1.end();
+		}
+		//Variables relacionadas con la Rm
+		for (int l = 0; l < numbins; l++)
+		{
+			IloExpr v1(env);
+			v1 += (-1) * Rm;
+			if (l < (numbins - 1))
+				v1 += (-1) * plate_w * y_l[l + 1];
+			for (int k = 0; k < numtiras; k++)
+			{
+				v1 += w_kl[l][k];
+			}
+			restr.add(IloRange(env, -IloInfinity, v1, 0));
+			v1.end();
+		}
+			IloExpr v3(env);
+			for (int i = 0; i < numbins; i++)
+			{
+				v3 += plate_w * y_l[i];
+			}
+			v3 += (-1) * plate_w;
+			v3 += Rm;
+			restr.add(IloRange(env, floor(Total_area / plate_h), v3, IloInfinity));
+			v3.end();
+	}
 	//Altura mínima
 	for (int k = 0; k < numbins; k++)
 	{
@@ -2481,9 +2609,25 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 	if (Tipo_objetivo == 2)//por tira del último bin
 	{
 
-		for (int k = 0; k < numtiras; k++)
+		if (Tipo_objetivo == 2)//por tira del último bin
 		{
-			Expression_fobj += w_kl[numbins - 1][k];
+			if (P_NewObjective_Rm)
+			{
+				for (int i = 0; i < numbins; i++)
+				{
+					Expression_fobj += plate_w * y_l[i];
+				}
+				Expression_fobj += (-1) * plate_w;
+				Expression_fobj += Rm;
+
+			}
+			else
+			{
+				for (int k = 0; k < numtiras; k++)
+				{
+					Expression_fobj += w_kl[k][numbins - 1];
+				}
+			}
 		}
 	}
 	if (Tipo_objetivo == 3)//máximo de tiras
@@ -2545,6 +2689,11 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 //			cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, LastBinWidth);
 		if (G_Dibujar)
 			cplex.exportModel("RoadefStageOrigwastes.lp");
+
+		if (P_NewObjective_Rm)
+			cplex.setParam(IloCplex::Param::Simplex::Limits::LowerObj, floor(Total_area / plate_h));
+		if (!P_initial_solution)
+			cplex.setParam(IloCplex::MIPEmphasis, 1);
 
 		//CPXsetintparam(env,CPX_PARAM_THREADS,1);
 
@@ -2775,6 +2924,7 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 				//				if (cplex.getStatus() == IloAlgorithm::Unbounded) fprintf(f, "Unbounded\n");
 				//				fprintf(f, "\n%s \tnosol;%.2f;%.2f;MaxTiras %d\t MaxPilas %d\t  Bins %d Tiras %d Pilas %d\n", name_instance.c_str(), cplex.getNnodes(), cplex.getTime(), maxTiras, maxPilas, numbins, numtiras, numpilas);
 			}
+			LB_Best_Value_Formulation = cplex.getBestObjValue();
 			//			fclose(f);
 		}
 		else
@@ -2874,7 +3024,8 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 					if (G_Draw_Exacto)
 					{
 						std::string str = file_idx + "_solution_" + std::to_string(G_Exacto) + "_" + std::to_string(Tipo_objetivo) + "_" + std::to_string(Duplicated)+ ".txt";
-						fin3 = fopen(str.c_str(), "w+");
+//						fin3 = fopen(str.c_str(), "w+");
+						fin3=fopen(P_file_to_write.c_str(), "w+");
 					}
 					else
 						fin3 = fopen("./temp2.txt", "w+");
@@ -2948,6 +3099,7 @@ void Glass::FormulationStagesOrigWastes(short int nbins, short int nt)
 
 					}
 					fclose(fin3);
+					WriteSolution();
 					DibujarOpenGL();
 
 
