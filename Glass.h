@@ -123,6 +123,7 @@ public:
 	bool P_heur = false;
 	bool P_WithoutRotation = false;
 	bool P_WithoutPiles = true;
+	bool Use_init_sol;
 	//Set of integers where there is a piece of the same size of others 
 	vector< bool > P_set_xa;
 	vector< bool > P_set_xar;
@@ -218,6 +219,7 @@ public:
 	int  seed = 1;
 	int G_Iterations = 1;
 	int G_Size_width = 1;
+	std::vector<int> G_Acumulado_Min;
 	int  Partial_objective_function_List = MAXIMUM_INT_ROADEF; //Least value of Partial_objective_function int percentaje per thousand
 	int  Max_List_Nodos_Beam_Per_Nodo = 10;
 	int  Max_List_Nodos_Beam = 100;
@@ -243,6 +245,7 @@ public:
 	int Best_Solution_Exacto = 0;
 	bool one_item_each = false;
 	bool draw_solution = true;
+	bool P_NewObjective_Rm = false;
 	int  node_id = 0;
 	int  rect_id = 0;
 	std::list< GlassRsol>  G_Rsol_Items;
